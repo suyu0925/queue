@@ -3,6 +3,7 @@ export type Worker = () => Promise<any>
 interface IQueue {
   push: (worker: Worker) => void
   start: () => void
+  drain: () => Promise<void>
 }
 
 class Queue implements IQueue {
@@ -14,6 +15,10 @@ class Queue implements IQueue {
 
   start() {
     this.process()
+  }
+
+  async drain() {
+    await this.process()
   }
 
   private async process() {
