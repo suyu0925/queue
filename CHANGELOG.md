@@ -1,5 +1,11 @@
 # change log
 
+## `0.0.6`
+
+- add `autostart` option
+- add `running` getter
+- remove getter `length` to `waiting`
+
 ## `0.0.5`
 
 - support concurrency

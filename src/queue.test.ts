@@ -20,15 +20,16 @@ describe('base', () => {
       .map(() => Worker.empty)
       .forEach(worker => q.push(worker))
 
-    expect(q.length).toBe(n)
+    expect(q.waiting).toBe(n)
 
-    // after start, the first worker is executed immediately
+    // after start, the first `concurrency` workers is executed immediately
     q.start()
-    expect(q.length).toBe(n - concurrency)
+    expect(q.running).toBe(concurrency)
+    expect(q.waiting).toBe(n - concurrency)
 
     // after a while, all workers are executed
     await delay(100)
-    expect(q.length).toBe(0)
+    expect(q.waiting).toBe(0)
   })
 
   test('drain should wait for all workers to finish', async () => {
@@ -37,11 +38,11 @@ describe('base', () => {
       .forEach(worker => q.push(worker))
 
     // results is empty at beginning
-    expect(q.length).toBe(n)
+    expect(q.waiting).toBe(n)
 
     // after drain, all workers are executed
     await q.drain()
-    expect(q.length).toBe(0)
+    expect(q.waiting).toBe(0)
   })
 
   test('the wokers should be run by order', async () => {
@@ -58,6 +59,22 @@ describe('base', () => {
     await q.drain()
 
     expect(results).toEqual(Array(n).fill(0).map((_, i) => i))
+  })
+
+  test('autostart', async () => {
+    const concurrency = 4
+    const q = new Queue({ autostart: true, concurrency })
+
+    Array(n).fill(0)
+      .map(() => Worker.delay)
+      .forEach(worker => q.push(worker))
+
+    // after push, the first `concurrency` workers is executed immediately
+    expect(q.waiting).toBe(n - concurrency)
+
+    // no need call drain manually, all workers are executed
+    await delay(300)
+    expect(q.waiting).toBe(0)
   })
 })
 
