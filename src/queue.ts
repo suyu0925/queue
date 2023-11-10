@@ -8,6 +8,8 @@ interface IQueue {
 
 class Queue implements IQueue {
   private workers: Worker[] = []
+  private isRunning = false
+  private drainResolves: ((value: void | PromiseLike<void>) => void)[] = []
 
   push(worker: Worker) {
     this.workers.push(worker)
@@ -18,15 +20,47 @@ class Queue implements IQueue {
   }
 
   async drain() {
-    await this.process()
+    if (this.idle()) {
+      return
+    }
+
+    return new Promise<void>(resolve => {
+      this.drainResolves.push(resolve)
+      this.process()
+    })
+  }
+
+  get length() {
+    return this.workers.length
   }
 
   private async process() {
+    if (this.isRunning) {
+      return
+    }
+
     const worker = this.workers.shift()
     if (worker) {
-      await worker()
-      await this.process()
+      try {
+        this.isRunning = true
+        await worker()
+      } catch (err) {
+        // swallow error
+      } finally {
+        this.isRunning = false
+      }
+
+      if (this.idle()) {
+        this.drainResolves.forEach(resolve => resolve())
+        this.drainResolves = []
+      } else {
+        await this.process()
+      }
     }
+  }
+
+  private idle() {
+    return this.workers.length === 0 && !this.isRunning
   }
 }
 
