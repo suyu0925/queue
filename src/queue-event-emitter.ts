@@ -51,3 +51,5 @@ class QueueEventEmitter {
     }
   }
 }
+
+export default QueueEventEmitter

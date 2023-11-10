@@ -50,6 +50,11 @@ describe('base', () => {
 
     expect(results).toEqual(Array(n).fill(0).map((_, i) => i))
   })
+})
+
+describe('idempotent', () => {
+  const n = 10
+  const q = new Queue()
 
   test('`start` should be idempotent', async () => {
     const results: number[] = []
@@ -84,6 +89,11 @@ describe('base', () => {
 
     expect(results).toEqual(Array(n).fill(0).map((_, i) => i))
   })
+})
+
+describe('error handling', () => {
+  const n = 10
+  const q = new Queue()
 
   test('error should be swallowed', async () => {
     Array(n).fill(0)

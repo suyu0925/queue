@@ -1,6 +1,9 @@
+import QueueEventEmitter from './queue-event-emitter'
+
 export type Worker = () => Promise<any>
 
-interface IQueue {
+export interface IQueue {
+  length: number
   push: (worker: Worker) => void
   start: () => void
   drain: () => Promise<void>
@@ -22,6 +25,8 @@ class Queue extends QueueEventEmitter implements IQueue {
     if (this.idle()) {
       return
     }
+
+    this.process()
 
     return this.eventMethod<void>('drain')()
   }
@@ -46,11 +51,11 @@ class Queue extends QueueEventEmitter implements IQueue {
         this.isRunning = false
       }
 
-      if (this.idle()) {
-        this.trigger('drain')
-      } else {
-        await this.process()
-      }
+      await this.process()
+    }
+
+    if (this.idle()) {
+      this.trigger('drain')
     }
   }
 
