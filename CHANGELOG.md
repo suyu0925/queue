@@ -1,5 +1,9 @@
 # change log
 
+## `0.0.4`
+
+- refactor, extends QueueEventEmitter class
+
 ## `0.0.3`
 
 - add `length` getter

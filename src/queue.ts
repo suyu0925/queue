@@ -6,10 +6,9 @@ interface IQueue {
   drain: () => Promise<void>
 }
 
-class Queue implements IQueue {
+class Queue extends QueueEventEmitter implements IQueue {
   private workers: Worker[] = []
   private isRunning = false
-  private drainResolves: ((value: void | PromiseLike<void>) => void)[] = []
 
   push(worker: Worker) {
     this.workers.push(worker)
@@ -24,10 +23,7 @@ class Queue implements IQueue {
       return
     }
 
-    return new Promise<void>(resolve => {
-      this.drainResolves.push(resolve)
-      this.process()
-    })
+    return this.eventMethod<void>('drain')()
   }
 
   get length() {
@@ -51,8 +47,7 @@ class Queue implements IQueue {
       }
 
       if (this.idle()) {
-        this.drainResolves.forEach(resolve => resolve())
-        this.drainResolves = []
+        this.trigger('drain')
       } else {
         await this.process()
       }
