@@ -1,5 +1,9 @@
 # change log
 
+## `0.0.5`
+
+- support concurrency
+
 ## `0.0.4`
 
 - refactor, extends QueueEventEmitter class

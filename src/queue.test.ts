@@ -2,20 +2,29 @@ import Queue from './index'
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-describe('base', () => {
-  const n = 10
-  const q = new Queue()
+const n = 10
+const q = new Queue()
 
+const Worker = {
+  empty: async () => { },
+  delay: async () => await delay(10),
+  error: async () => { throw new Error('error from worker') },
+}
+
+describe('base', () => {
   test('should run all workers', async () => {
+    const concurrency = 4
+    const q = new Queue({ concurrency })
+
     Array(n).fill(0)
-      .map(() => async () => { })
+      .map(() => Worker.empty)
       .forEach(worker => q.push(worker))
 
     expect(q.length).toBe(n)
 
     // after start, the first worker is executed immediately
     q.start()
-    expect(q.length).toBe(n - 1)
+    expect(q.length).toBe(n - concurrency)
 
     // after a while, all workers are executed
     await delay(100)
@@ -24,9 +33,7 @@ describe('base', () => {
 
   test('drain should wait for all workers to finish', async () => {
     Array(n).fill(0)
-      .map(() => async () => {
-        await delay(1)
-      })
+      .map(() => Worker.delay)
       .forEach(worker => q.push(worker))
 
     // results is empty at beginning
@@ -38,6 +45,8 @@ describe('base', () => {
   })
 
   test('the wokers should be run by order', async () => {
+    const q = new Queue({ concurrency: 1 })
+
     const results: number[] = []
     Array(n).fill(0)
       .map((_, i) => async () => {
@@ -53,8 +62,7 @@ describe('base', () => {
 })
 
 describe('idempotent', () => {
-  const n = 10
-  const q = new Queue()
+  const q = new Queue({ concurrency: 1 })
 
   test('`start` should be idempotent', async () => {
     const results: number[] = []
@@ -103,5 +111,41 @@ describe('error handling', () => {
       .forEach(worker => q.push(worker))
 
     await expect(q.drain()).resolves.toBeUndefined()
+  })
+})
+
+describe('concurrency', () => {
+  const results: number[] = []
+  const workerFn = (i: number) => async () => {
+    await delay((n - i) * 10)
+    results.push(i)
+  }
+
+  beforeEach(() => {
+    results.length = 0
+  })
+
+  test('one by one', async () => {
+    const q = new Queue({ concurrency: 1 })
+
+    Array(n).fill(0)
+      .map((_, i) => workerFn(i))
+      .forEach(worker => q.push(worker))
+
+    await q.drain()
+
+    expect(results).toEqual(Array(n).fill(0).map((_, i) => i))
+  })
+
+  test('all parallel', async () => {
+    const q = new Queue({ concurrency: n })
+
+    Array(n).fill(0)
+      .map((_, i) => workerFn(i))
+      .forEach(worker => q.push(worker))
+
+    await q.drain()
+
+    expect(results).toEqual(Array(n).fill(0).map((_, i) => n - 1 - i))
   })
 })
