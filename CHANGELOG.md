@@ -1,5 +1,9 @@
 # change log
 
+## `0.0.7`
+
+- add `throttler` option
+
 ## `0.0.6`
 
 - add `autostart` option

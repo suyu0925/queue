@@ -1,10 +1,12 @@
 import QueueEventEmitter from './queue-event-emitter'
+import Throttler, { ThrottlerOptions } from './throttler'
 
-export type Worker = () => Promise<any>
+export type Worker = <T extends unknown[], R>(...args: T) => Promise<R | never | void>
 
 export type QueueOptions = {
   concurrency?: number
   autostart?: boolean
+  throttler?: ThrottlerOptions
 }
 
 export interface IQueue {
@@ -21,15 +23,18 @@ class Queue extends QueueEventEmitter implements IQueue {
   private numRunning = 0
   private concurrency: number
   private autostart: boolean
+  private throttler?: Throttler
 
   constructor(options: QueueOptions = {}) {
     super()
 
-    const { concurrency = 4, autostart = false } = options
+    const { concurrency = 4, autostart = false, throttler: throttlerOptions } = options
     this.concurrency = concurrency
     this.autostart = autostart
+    if (throttlerOptions) {
+      this.throttler = new Throttler(throttlerOptions)
+    }
   }
-
 
   push(worker: Worker) {
     this.workers.push(worker)
@@ -53,12 +58,33 @@ class Queue extends QueueEventEmitter implements IQueue {
     return this.eventMethod<void>('drain')()
   }
 
-  get waiting() {
+  get waiting(): number {
     return this.workers.length
   }
 
-  get running() {
+  get running(): number {
     return this.numRunning
+  }
+
+  inspect() {
+    console.log(`queue: ${this.workers.length}, running: ${this.numRunning}`)
+  }
+
+  private getNumOfReadyToRun(): number {
+    const leftConcurrent = Math.min(this.concurrency - this.numRunning, this.workers.length)
+    if (this.throttler) {
+      const canRunCount = this.throttler.getCanRunCount()
+      const l = Math.min(canRunCount, leftConcurrent)
+      if (leftConcurrent > 0 && canRunCount === 0) {
+        const nextRunTime = this.throttler.getNextRunTime()
+        if (nextRunTime) {
+          setTimeout(this.process.bind(this), nextRunTime - Date.now())
+        }
+      }
+      return l
+    } else {
+      return leftConcurrent
+    }
   }
 
   private process() {
@@ -67,13 +93,22 @@ class Queue extends QueueEventEmitter implements IQueue {
     }
     this.isProcessing = true
     while (this.numRunning < this.concurrency && this.workers.length > 0) {
-      const l = Math.min(this.concurrency - this.numRunning, this.workers.length)
-      this.numRunning += l
+      const numReadyToRun = this.getNumOfReadyToRun()
+      if (numReadyToRun === 0) {
+        break
+      }
+      this.numRunning += numReadyToRun
 
-      const tasks = this.workers.splice(0, l).map(
+      const tasks = this.workers.splice(0, numReadyToRun).map(
         async worker => {
           try {
-            await worker()
+            if (this.throttler) {
+              const job = this.throttler.startNewJob()
+              await worker()
+              this.throttler.endJob(job)
+            } else {
+              await worker()
+            }
           } catch (e) {
             // swallow error
           } finally {
@@ -95,10 +130,6 @@ class Queue extends QueueEventEmitter implements IQueue {
 
   private idle() {
     return this.workers.length === 0 && this.numRunning === 0
-  }
-
-  private inspect() {
-    console.log(`queue: ${this.workers.length}, running: ${this.numRunning}`)
   }
 }
 
