@@ -1,5 +1,10 @@
 # change log
 
+## `0.0.8`
+
+- add `await` method
+- add `debug` option
+
 ## `0.0.7`
 
 - add `throttler` option

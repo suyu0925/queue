@@ -1,18 +1,28 @@
 import QueueEventEmitter from './queue-event-emitter'
 import Throttler, { ThrottlerOptions } from './throttler'
+import { randomUUID } from 'node:crypto'
 
-export type Worker = <T extends unknown[], R>(...args: T) => Promise<R | never | void>
+export type WorkerFunc = (...args: unknown[]) => Promise<unknown>
+type WorkerId = string & { Symbol(): never }
+type Worker = {
+  id: WorkerId
+  func: WorkerFunc
+  resolve?: (value: unknown) => void
+  reject?: (reason?: any) => void
+}
 
 export type QueueOptions = {
   concurrency?: number
   autostart?: boolean
-  throttler?: ThrottlerOptions
+  throttler?: Omit<ThrottlerOptions, 'debug'>
+  debug?: boolean
 }
 
 export interface IQueue {
   waiting: number
   running: number
-  push: (worker: Worker) => void
+  push: (func: WorkerFunc) => void
+  await: (func: WorkerFunc) => Promise<unknown>
   start: () => void
   drain: () => Promise<void>
 }
@@ -24,20 +34,40 @@ class Queue extends QueueEventEmitter implements IQueue {
   private concurrency: number
   private autostart: boolean
   private throttler?: Throttler
+  private debug: boolean
 
   constructor(options: QueueOptions = {}) {
     super()
 
-    const { concurrency = 4, autostart = false, throttler: throttlerOptions } = options
+    const { concurrency = 4, autostart = false, throttler: throttlerOptions, debug = false } = options
     this.concurrency = concurrency
     this.autostart = autostart
     if (throttlerOptions) {
-      this.throttler = new Throttler(throttlerOptions)
+      this.throttler = new Throttler({ ...throttlerOptions, debug })
     }
+    this.debug = debug
   }
 
-  push(worker: Worker) {
+  async await(func: WorkerFunc) {
+    const worker: Worker = {
+      id: randomUUID() as WorkerId,
+      func,
+    }
     this.workers.push(worker)
+
+    this.process()
+
+    return new Promise((resolve, reject) => {
+      worker.resolve = resolve
+      worker.reject = reject
+    })
+  }
+
+  push(func: WorkerFunc) {
+    this.workers.push({
+      id: randomUUID() as WorkerId,
+      func,
+    })
 
     if (this.autostart) {
       this.process()
@@ -92,6 +122,12 @@ class Queue extends QueueEventEmitter implements IQueue {
       return
     }
     this.isProcessing = true
+
+    if (this.debug) {
+      this.inspect()
+      this.throttler?.inspect()
+    }
+
     while (this.numRunning < this.concurrency && this.workers.length > 0) {
       const numReadyToRun = this.getNumOfReadyToRun()
       if (numReadyToRun === 0) {
@@ -104,13 +140,21 @@ class Queue extends QueueEventEmitter implements IQueue {
           try {
             if (this.throttler) {
               const job = this.throttler.startNewJob()
-              await worker()
+              const result = await worker.func()
+              if (worker.resolve) {
+                worker.resolve(result)
+              }
               this.throttler.endJob(job)
             } else {
-              await worker()
+              const result = await worker.func()
+              if (worker.resolve) {
+                worker.resolve(result)
+              }
             }
           } catch (e) {
-            // swallow error
+            if (worker.reject) {
+              worker.reject(e)
+            }
           } finally {
             this.numRunning -= 1
           }
